@@ -7,7 +7,7 @@ on:
     inputs:
       model_c:
         description: 'Logistic regression C (smaller = stronger regularization)'
-        default: '1.0'
+        default: '0.1'
       min_accuracy:
         description: 'Quality gate: minimum test accuracy to go live'
         default: '0.90'
@@ -97,7 +97,7 @@ jobs:
           GCS_BUCKET_NAME: ${{ vars.GCS_BUCKET_NAME }}
           # Run settings are scoped to this step only, so they can never leak into
           # the test job. Inputs exist only on manual runs; other runs use defaults.
-          MODEL_C: ${{ inputs.model_c || '1.0' }}
+          MODEL_C: ${{ inputs.model_c || '0.1' }}
           MIN_ACCURACY: ${{ inputs.min_accuracy || '0.90' }}
           MAX_REGRESSION: ${{ inputs.max_regression || '0.02' }}
         run: python train_and_save_model.py

@@ -6,7 +6,7 @@ Usage:
 
 Settings come from command-line flags or environment variables:
   GCS_BUCKET_NAME   bucket to upload to (required for a full run)
-  MODEL_C           logistic regression C (default 1.0)
+  MODEL_C           logistic regression C (default 0.1, chosen from manual tuning runs)
   MIN_ACCURACY      quality gate: minimum test accuracy (default 0.90)
   MAX_REGRESSION    quality gate: allowed macro-F1 drop vs the live model (default 0.02)
 """
@@ -34,7 +34,7 @@ from src.model_pipeline import (
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--local", action="store_true", help="skip GCS, save to ./artifacts")
-    parser.add_argument("--c", type=float, default=float(os.getenv("MODEL_C", "1.0")))
+    parser.add_argument("--c", type=float, default=float(os.getenv("MODEL_C", "0.1")))
     parser.add_argument("--min-accuracy", type=float, default=float(os.getenv("MIN_ACCURACY", "0.90")))
     parser.add_argument("--max-regression", type=float, default=float(os.getenv("MAX_REGRESSION", "0.02")))
     return parser.parse_args(argv)
