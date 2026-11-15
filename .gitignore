@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+artifacts/
+*.joblib
+# credentials file written by the GCP auth action; never commit it
+gha-creds-*.json
