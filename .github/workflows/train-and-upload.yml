@@ -1,0 +1,137 @@
+name: Train, gate and deploy model to GCS
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # every day at 05:00 UTC (midnight in Boston)
+  workflow_dispatch:      # "Run workflow" button, with settings you can change per run
+    inputs:
+      model_c:
+        description: 'Logistic regression C (smaller = stronger regularization)'
+        default: '1.0'
+      min_accuracy:
+        description: 'Quality gate: minimum test accuracy to go live'
+        default: '0.90'
+      max_regression:
+        description: 'Quality gate: largest allowed macro-F1 drop vs the live model'
+        default: '0.02'
+  push:
+    branches: [main]
+    paths:                # README or screenshot pushes do not retrain
+      - 'src/**'
+      - 'tests/**'
+      - 'train_and_save_model.py'
+      - 'verify_model.py'
+      - 'requirements.txt'
+      - '.github/workflows/train-and-upload.yml'
+
+permissions:
+  contents: read
+
+# Runs queue one at a time; a run is never cancelled halfway through an upload
+concurrency:
+  group: train-and-upload
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.12'
+  # Inputs exist only on manual runs; scheduled and push runs fall back to the defaults
+  MODEL_C: ${{ inputs.model_c || '1.0' }}
+  MIN_ACCURACY: ${{ inputs.min_accuracy || '0.90' }}
+  MAX_REGRESSION: ${{ inputs.max_regression || '0.02' }}
+
+jobs:
+  # ---------- Stage 1: tests (no cloud access) ----------
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+
+  # ---------- Stage 2: train, quality gate, upload ----------
+  train:
+    name: Train, gate and upload
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write     # lets this job request a short-lived GitHub OIDC token for GCP
+    outputs:
+      promoted: ${{ steps.train.outputs.promoted }}
+      version: ${{ steps.train.outputs.version }}
+      run_prefix: ${{ steps.train.outputs.run_prefix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Keyless: no JSON key stored in GitHub. GCP trusts GitHub's OIDC token,
+      # but only for this repository, and only to act as the trainer service account.
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Train, evaluate, gate and upload
+        id: train
+        env:
+          GCS_BUCKET_NAME: ${{ vars.GCS_BUCKET_NAME }}
+        run: python train_and_save_model.py
+
+  # ---------- Stage 3: verify the deployed model ----------
+  verify:
+    name: Verify live model
+    needs: train
+    if: needs.train.outputs.promoted == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Download live model from GCS and re-score it
+        env:
+          GCS_BUCKET_NAME: ${{ vars.GCS_BUCKET_NAME }}
+          EXPECTED_RUN_PREFIX: ${{ needs.train.outputs.run_prefix }}
+        run: python verify_model.py
