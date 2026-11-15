@@ -38,6 +38,14 @@ class FakeBucket:
         destination_bucket.store[new_name] = self.store[blob.name]
 
 
+# Tests must not depend on run settings in the environment (for example a manual
+# run with MODEL_C=0.001). Clear them so every test starts from the defaults.
+@pytest.fixture(autouse=True)
+def clean_run_settings(monkeypatch):
+    for name in ("MODEL_C", "MIN_ACCURACY", "MAX_REGRESSION", "GCS_BUCKET_NAME"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def fake_bucket():
     return FakeBucket()
