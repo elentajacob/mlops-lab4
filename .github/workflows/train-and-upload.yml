@@ -34,10 +34,6 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.12'
-  # Inputs exist only on manual runs; scheduled and push runs fall back to the defaults
-  MODEL_C: ${{ inputs.model_c || '1.0' }}
-  MIN_ACCURACY: ${{ inputs.min_accuracy || '0.90' }}
-  MAX_REGRESSION: ${{ inputs.max_regression || '0.02' }}
 
 jobs:
   # ---------- Stage 1: tests (no cloud access) ----------
@@ -99,6 +95,11 @@ jobs:
         id: train
         env:
           GCS_BUCKET_NAME: ${{ vars.GCS_BUCKET_NAME }}
+          # Run settings are scoped to this step only, so they can never leak into
+          # the test job. Inputs exist only on manual runs; other runs use defaults.
+          MODEL_C: ${{ inputs.model_c || '1.0' }}
+          MIN_ACCURACY: ${{ inputs.min_accuracy || '0.90' }}
+          MAX_REGRESSION: ${{ inputs.max_regression || '0.02' }}
         run: python train_and_save_model.py
 
   # ---------- Stage 3: verify the deployed model ----------
